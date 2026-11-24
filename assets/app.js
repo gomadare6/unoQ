@@ -20,7 +20,7 @@ let lastChangeTimestamp = 0;
 
 const ui = new WebUI();
 ui.on_connect(() => showError(''));
-ui.on_disconnect(() => showError('Connection to the board lost. Please check the connection.'));
+ui.on_disconnect(() => showError('ボードとの接続が切れました。接続を確認してください。'));
 ui.on_message('classifications', message => {
   handleClassifications(message);
   renderClasses();
@@ -38,8 +38,8 @@ function showError(text) {
 function initializePopovers() {
   const texts = {
     confidence:
-      'Minimum confidence score for a person to be detected. Lower values show more results but may include false positives.',
-    feedback: 'When the camera detects a person, an animation will appear here.',
+      '人として検知するのに必要な最低の信頼度です。値を下げると検知しやすくなりますが、誤検知も増えます。',
+    feedback: 'カメラが人を検知すると、ここにアニメーションが表示されます。',
   };
   for (const [kind, text] of Object.entries(texts)) {
     document.querySelectorAll(`.info-btn.${kind}`).forEach(img => {
@@ -79,7 +79,7 @@ function renderClasses() {
     recentDetectionsElement.innerHTML = `
             <div class="no-recent-scans">
                 <img src="./img/no-face.svg">
-                No person detected yet
+                まだ人は検知されていません
             </div>
         `;
     return;
@@ -95,7 +95,7 @@ function renderClasses() {
 
       const contentText = document.createElement('span');
       contentText.className = 'scan-content';
-      contentText.textContent = `${Math.floor(scan.confidence * 1000) / 10}% - ${scan.content}`;
+      contentText.textContent = `${Math.floor(scan.confidence * 1000) / 10}% - ${scan.content === 'person' ? '人' : scan.content}`;
 
       const timeText = document.createElement('span');
       timeText.className = 'scan-content-time';
@@ -151,11 +151,11 @@ function showDetection(result) {
 
   const img = document.createElement('img');
   img.src = isPerson ? 'img/hand.gif' : 'img/no-face.svg';
-  img.alt = isPerson ? 'Hand' : 'No-face';
+  img.alt = isPerson ? '手を振るアニメーション' : '人なし';
   img.style.width = '100px';
 
   const text = document.createElement('div');
-  text.textContent = isPerson ? 'Person detected!' : 'non-person detected!';
+  text.textContent = isPerson ? '人を検知しました！' : '人はいません';
   text.className = 'detection-text';
 
   feedbackContentElement.replaceChildren(img, text);
