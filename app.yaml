@@ -1,5 +1,5 @@
-name: Copy of Person Classifier on Camera
-description: This example showcases person classification on camera, using a camera stream
+name: 人検知LED
+description: カメラ映像からAIで人を検知し、人がいるとLEDを赤、いないと緑に切り替えるアプリ
 ports: []
 bricks:
 - arduino:video_image_classification:
