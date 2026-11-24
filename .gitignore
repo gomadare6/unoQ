@@ -1,0 +1,6 @@
+# Large media files (kept locally, not on GitHub)
+*.mov
+*.mp4
+*.jpeg
+*.jpg
+*.pptx
