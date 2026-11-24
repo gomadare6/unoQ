@@ -1,171 +1,88 @@
-# Person Classifier on Camera
+# 人検知LED（Arduino UNO Q）
 
-The **Person Classifier** example lets you detect people on a live feed from a camera and visualize the model inference result on a user-friendly web interface.
+カメラの映像から AI で人を検知し、**Arduino UNO Q のオンボード RGB LED の色を切り替える**アプリです。
 
-**Note:** This example requires to be run using **Network Mode** in the Arduino App Lab or in **Single-Board Computer (SBC)** mode, since you will need a [USB-C® hub](https://store.arduino.cc/products/usb-c-hub-8-in-1) to connect the camera _(only for UNO Q)_.
+- 人を検知している間 → **赤**
+- 人がいないとき → **緑**
 
-*This example is based on Arduino UNO Q, but also works on Arduino VENTUNO Q.*
+検知結果はブラウザの Web 画面でもリアルタイムに確認できます。
 
-![Person Classifier on Camera](assets/docs_assets/person-classification.png)
+![人検知の画面](assets/docs_assets/person-classification.png)
 
-This example uses a pre-trained model to detect people on a live video feed from a camera. The workflow involves continuously getting the frames from a camera, processing it through an AI model using the `video_imageclassification` Brick, and displaying the classification along with their corresponding probabilities. The code is structured to be easily adaptable to different models.
+このプロジェクトは、Arduino 公式サンプル「Person Classifier on Camera」をベースに、LED 制御などを追加したものです。
 
-## Brick Used
+## 使っている Brick
 
-The example uses the following Bricks:
+- `video_imageclassification`: カメラ映像を AI モデル（`person-classification`）で分類する
+- `web_ui`: 分類結果を表示する Web 画面を提供する
 
-- `web_ui`: Brick to create a web interface to display the classification results and model controls.
-- `video_imageclassification`: Brick to classify objects within a live video feed from a camera.
+## 必要なもの
 
-## Hardware Requirements
+- Arduino UNO Q（または Arduino VENTUNO Q）×1
+- USB-C ケーブル（給電・書き込み用）×1
+- カメラ（USB カメラ、または UNO Media Carrier 経由の CSI カメラ）×1
+- 外部給電できる USB-C ハブ ×1（UNO Q で USB カメラを使う場合）
+- USB ハブ用の電源（5V / 3A、スマホの充電器など）
 
-### Hardware
+**注意:** Arduino App Lab の **ネットワークモード**、またはボードをシングルボードコンピュータ（SBC）として使うモードで実行してください。UNO Q でカメラをつなぐには USB-C ハブが必要です。
 
-- Arduino UNO Q (x1) or Arduino VENTUNO Q (x1)
-- [USB-C® cable](https://store.arduino.cc/products/usb-c-cable-24-pin) (for power and programming) (x1) _(only for UNO Q)_
-- Camera (USB, or CSI using [Arduino® UNO™ Media Carrier](https://store.arduino.cc/products/uno-media-carrier) on the UNO Q) (x1)
-- [USB-C® hub](https://store.arduino.cc/products/usb-c-hub-8-in-1) adapter with external power (x1) _(only for UNO Q)_
-- A power supply (5 V, 3 A) for the USB hub (e.g. a phone charger) _(only for UNO Q)_
+## 使い方
 
-**Note:** You can also run this example using your board as a Single-Board Computer (SBC) with a mouse, keyboard and monitor attached (on the UNO Q through a [USB-C® hub](https://store.arduino.cc/products/usb-c-hub-8-in-1)).
+1. カメラをボードに接続します（UNO Q の USB カメラは、給電付きの USB-C ハブ経由でつなぎます）。
 
-## How to Use the Example
+   ![ハードウェアの接続](assets/docs_assets/hardware-setup.png)
 
-1. Connect the camera to the board (on the UNO Q, a USB camera needs a powered [USB-C® hub](https://store.arduino.cc/products/usb-c-hub-8-in-1)).
+2. Arduino App Lab の上部バーからアプリを実行します。
+3. ブラウザで Web 画面が自動的に開きます。開かない場合は `<ボード名>.local:7000` にアクセスしてください。
+4. カメラの前に立つと、LED が緑から赤に変わり、画面に検知結果が表示されます。カメラの前から離れると、約 1 秒後に緑に戻ります。
 
-   ![Hardware setup](assets/docs_assets/hardware-setup.png)
+## 仕組み
 
-2. Run the App on the top navigation bar.
+```
+カメラ → [Python: AI で人を検知] ─┬→ Bridge → [マイコン: LED を赤/緑に切り替え]
+                                  └→ WebSocket → [ブラウザ: 検知結果を表示]
+```
 
-3. The App should open automatically in the web browser. You can open it manually via `<board-name>.local:7000`.
+### Python 側（`python/main.py`）
 
-4. Position yourself in front of the camera and watch as the App detects and recognizes a person.
+- `VideoImageClassification` でカメラ映像を分類します（信頼度のしきい値は 0.5）。
+- 人（`person`）を検知するたびに、その時刻を記録します。
+- 別スレッド（`led_loop`）が 0.1 秒ごとに「最後に人を検知してから 1 秒以内か」を判定します。**状態が変わったときだけ** `Bridge.call("set_led_state", ...)` でマイコンに通知します。
+- 検知結果（ラベル・信頼度・時刻）を JSON にまとめ、`classifications` メッセージとして Web 画面に送ります。毎フレーム送ると重くなるので、**0.5 秒に 1 回**に間引いています。
+- 画面のスライダーでしきい値を変えると、`override_th` メッセージで反映されます。
 
-## How it Works
+調整できる主な値:
 
-This example hosts a Web UI where we can see the video input from the camera connected via USB. The video stream is then processed using the `video_imageclassification` Brick. When a person is detected, it is logged along with the confidence score (e.g. 95% person).
+| 定数 | 意味 | 初期値 |
+|---|---|---|
+| `LED_OFF_DELAY_SEC` | 人がいなくなってから緑に戻すまでの秒数 | 1.0 |
+| `UI_SEND_INTERVAL_SEC` | 画面へ検知結果を送る間隔（秒） | 0.5 |
 
-Here is a brief explanation of the full-stack application:
+### マイコン側（`sketch/sketch.ino`）
 
-### 🔧 Backend (main.py)
+- UNO Q のオンボード RGB LED（LED3）を使います。LOW で点灯するアクティブ LOW です。
+- `Bridge.provide("set_led_state", set_led_state)` で、Python から呼べる関数を公開しています。
+  - `true`（人あり）→ 赤
+  - `false`（人なし）→ 緑
+- 起動直後は緑で点灯します。
 
-- Initializes the app Bricks:
-  - **WebUI** (`ui = WebUI()`): channel to push messages to the frontend.
-  - **VideoImageClassification** (`detection_stream = VideoImageClassification()`): runs object detection on the video stream.
+### Web 画面（`assets/index.html` + `assets/app.js`）
 
-- Wires detection events to actions using callbacks:
-  - `on_detect("person", person_detected)`: when a **person** is detected, logs `"Detected a person!!!"`.
-  - `on_detect_all(send_detections_to_ui)`: for **every detection batch**, builds a JSON list with:
-    - `content`: label of the detected object
-    - `confidence`: detection confidence score
-    - `timestamp`: ISO 8601 UTC timestamp  
-      Then sends the JSON to the UI.
+- カメラ映像の表示（映像が準備できるまでは自動で再接続を試みます）
+- 信頼度しきい値の調整（スライダー・数値入力・リセットボタン）
+- 検知時のアニメーション表示
+- 最近の検知結果の一覧（信頼度と時刻つき）
+- バックエンドとの接続が切れたときのエラー表示
 
-- Exposes:
-  - **Realtime messaging**: publishes detection updates to the frontend via `ui.send_message("classifications", message=<json>)` so the UI can display live classifications.
+## フォルダ構成
 
-- Runs with `App.run()` which starts the internal event loop and keeps the detection stream and UI messaging alive.
+```
+├── app.yaml          アプリの設定（使う Brick とモデル）
+├── python/main.py    人検知・LED 制御・画面への送信
+├── sketch/           マイコン側のスケッチ（LED 制御）
+└── assets/           Web 画面（HTML / JS / CSS / 画像 / フォント）
+```
 
-### 💻 Frontend (index.html + app.js)
+## ライセンス
 
-- Connects to the backend using **WebUI** (`arduino.js`).
-- Renders:
-  - A **video feed iframe** with placeholder when the camera is not yet available.
-  - A **confidence control panel** with slider and numeric input to adjust detection threshold.
-  - A **feedback section** that shows animated responses when detections occur.
-  - A **recent detections list** displaying the latest classifications with confidence percentage and timestamp.
-
-- Manages:
-  - Automatic retry logic to load the video stream into the iframe.
-  - Dynamic update of the confidence slider and input with real-time visual feedback.
-  - Popover tooltips that explain the confidence threshold and feedback behavior.
-
-- Wires:
-  - **Socket events** (`classifications`) to update the feedback section and populate the recent detections list.
-  - **UI controls** (slider, input, reset button) to adjust and reset the confidence threshold interactively.
-  - **Connection status** to display an error message when the link to the backend is lost.
-
-## Understanding the Code
-
-Once the application is running, you can open it in your browser by navigating to `<BOARD-IP-ADDRESS>:7000`.  
-
-At that point, the device begins performing the following:
-
-- Serving the **video classification UI** and exposing realtime transports.
-
-  The UI is hosted by the `WebUI` Brick and communicates with the backend via WebSocket.  
-
-  The backend pushes classification messages whenever new objects are detected.
-
-  ```python
-  from arduino.app_bricks.web_ui import WebUI
-  from arduino.app_bricks.video_imageclassification import VideoImageClassification
-
-  ui = WebUI()
-  detection_stream = VideoImageClassification()
-
-  detection_stream.on_detect("person", person_detected)      # single-class callback
-  detection_stream.on_detect_all(send_detections_to_ui)      # all-classes callback
-  ```
-
-  - `person` (event): triggers a simple callback printing `"Detected a person!!!"`.
-  - `classifications` (WebSocket message): JSON list with label, confidence, and timestamp sent to the UI.
-
-- Processing detections and broadcasting updates.
-
-  When the video model detects objects, the backend:
-  1. Collects all current classifications with their confidence scores.
-  2. Attaches an ISO 8601 UTC timestamp.
-  3. Builds a JSON message and publishes it to the frontend channel `classifications`.
-
-  ```python
-  def send_detections_to_ui(classifications: dict):
-  if len(classifications) == 0:
-      return
-
-  entries = []
-  for key, value in classifications.items():
-      entry = {
-      "content": key,
-      "confidence": value,
-      "timestamp": datetime.now(UTC).isoformat()
-      }
-      entries.append(entry)
-
-  if len(entries) > 0:
-      msg = json.dumps(entries)
-      ui.send_message("classifications", message=msg)
-  ```
-
-- Rendering and interacting on the frontend.
-
-  The **index.html + app.js** bundle defines the interface:
-
-  - A **video feed iframe** attempts to connect to the embedded camera stream (`/embed`).
-  - A **confidence control** (slider + input) lets the user adjust the detection threshold.
-  - A **feedback section** displays animated messages when a person is classified.
-  - A **recent detections list** shows the latest entries with percentage and timestamp.
-
-  ```javascript
-  const ui = new WebUI();
-
-  ui.on_message('classifications', (message) => {
-    printClassifications(message); // update history
-    renderClasses(); // redraw the list
-    updateFeedback(true); // show greeting animation
-  });
-  ```
-
-  - `classifications` (WebSocket): received whenever the backend publishes detection results.
-  - Confidence slider and reset button dynamically adjust the filtering threshold in the UI.
-  - If the connection drops, an error message is shown in the frontend (`error-container`).
-
-- Executing the event loop.
-
-  Finally, the backend keeps everything alive with:
-
-  ```python
-  App.run()
-  ```
-
-  This maintains the video classification stream, event callbacks, and WebSocket communication with the frontend.
+元になった Arduino のサンプルコードは MPL-2.0 ライセンスです（各ファイル冒頭の表記を参照）。
